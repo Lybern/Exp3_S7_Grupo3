@@ -21,7 +21,7 @@ Para la solución del Banco XYZ se evaluaron las dos tecnologías requeridas:
 | **Operación e Infraestructura** | **Ligera y Rápida:** Contenedor Docker oficial (`apache/activemq-classic`) que consume menos de 100 MB de RAM y expone una consola web de monitoreo inmediata en el puerto `8161` (`http://localhost:8161/admin`). | **Pesada:** Requiere coordinar clústeres, particiones y metadatos (KRaft o Zookeeper), demandando entre 1 y 2 GB de RAM. |
 | **Idoneidad Bancaria (Saga)** | **Altamente idóneo:** La banca transaccional exige consistencia 1 a 1 y entrega garantizada con rollback o descarte controlado. | Idóneo para ingestión masiva de métricas, telemetría o streaming de datos en tiempo real, pero sobredimensionado para transacciones bancarias unitarias. |
 
-> **Decisión Arquitectónica:** Se seleccionó **JMS con Apache ActiveMQ Classic**, cumpliendo con la pauta formativa y asegurando consistencia transaccional y monitoreo visual inmediato.
+> **Decisión Arquitectónica:** Se seleccionó **JMS con Apache ActiveMQ Classic**, asegurando consistencia transaccional y monitoreo visual inmediato.
 
 ---
 
