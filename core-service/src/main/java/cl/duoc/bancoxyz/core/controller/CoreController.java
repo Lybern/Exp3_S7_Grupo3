@@ -4,6 +4,8 @@ import cl.duoc.bancoxyz.core.model.Cuenta;
 import cl.duoc.bancoxyz.core.model.MovimientoAnual;
 import cl.duoc.bancoxyz.core.model.Transaccion;
 import cl.duoc.bancoxyz.core.service.BancoService;
+import cl.duoc.bancoxyz.core.messaging.TransaccionEvent;
+import cl.duoc.bancoxyz.core.messaging.TransaccionMessagingProducer;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.ResponseEntity;
@@ -18,9 +20,11 @@ import java.util.Map;
 public class CoreController {
 
     private final BancoService bancoService;
+    private final TransaccionMessagingProducer messagingProducer;
 
-    public CoreController(BancoService bancoService) {
+    public CoreController(BancoService bancoService, TransaccionMessagingProducer messagingProducer) {
         this.bancoService = bancoService;
+        this.messagingProducer = messagingProducer;
     }
 
     @Operation(summary = "Obtener cuenta por ID")
@@ -65,5 +69,16 @@ public class CoreController {
         String comentario = req.getOrDefault("comentario", "").toString();
         bancoService.ejecutarTransferencia(origen, destino, monto, comentario);
         return ResponseEntity.ok(Map.of("mensaje", "Transferencia procesada exitosamente"));
+    }
+
+    @Operation(summary = "Consultar eventos en contingencia local (Circuit Breaker / ActiveMQ desconectado)")
+    @GetMapping("/mensajeria/contingencias")
+    public ResponseEntity<Map<String, Object>> obtenerContingencias() {
+        List<TransaccionEvent> contingencias = messagingProducer.getTransaccionesContingencia();
+        return ResponseEntity.ok(Map.of(
+                "totalContingencias", contingencias.size(),
+                "descripcion", "Eventos almacenados por Fallback de Resilience4j ante broker ActiveMQ no disponible",
+                "eventos", contingencias
+        ));
     }
 }

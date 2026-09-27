@@ -4,19 +4,25 @@ import cl.duoc.bancoxyz.core.model.Cuenta;
 import cl.duoc.bancoxyz.core.model.MovimientoAnual;
 import cl.duoc.bancoxyz.core.model.Transaccion;
 import cl.duoc.bancoxyz.core.repository.BancoRepository;
+import cl.duoc.bancoxyz.core.messaging.TransaccionEvent;
+import cl.duoc.bancoxyz.core.messaging.TransaccionMessagingProducer;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.NoSuchElementException;
+import java.util.UUID;
 
 @Service
 public class BancoService {
 
     private final BancoRepository bancoRepository;
+    private final TransaccionMessagingProducer messagingProducer;
 
-    public BancoService(BancoRepository bancoRepository) {
+    public BancoService(BancoRepository bancoRepository, TransaccionMessagingProducer messagingProducer) {
         this.bancoRepository = bancoRepository;
+        this.messagingProducer = messagingProducer;
     }
 
     public Cuenta obtenerCuentaPorId(Long cuentaId) {
@@ -60,6 +66,20 @@ public class BancoService {
         );
         bancoRepository.guardarTransaccion(tx);
 
+        // Publicacion Asincrona del Evento Transaccional a ActiveMQ con tolerancia a fallos
+        TransaccionEvent event = TransaccionEvent.builder()
+                .transaccionId("TX-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase())
+                .cuentaOrigenId(cuentaId)
+                .cuentaDestinoId(null)
+                .monto(monto)
+                .tipoOperacion("RETIRO")
+                .canal(canal != null ? canal : "ATM")
+                .estado("EXITOSA")
+                .fechaHora(LocalDateTime.now().toString())
+                .detalle("Giro por canal " + canal + " completado exitosamente")
+                .build();
+        messagingProducer.publicarTransaccion(event);
+
         return cuenta;
     }
 
@@ -85,5 +105,19 @@ public class BancoService {
 
         bancoRepository.guardarTransaccion(cargo);
         bancoRepository.guardarTransaccion(abono);
+
+        // Publicacion Asincrona del Evento Transaccional a ActiveMQ con tolerancia a fallos
+        TransaccionEvent event = TransaccionEvent.builder()
+                .transaccionId("TX-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase())
+                .cuentaOrigenId(cuentaOrigenId)
+                .cuentaDestinoId(cuentaDestinoId)
+                .monto(monto)
+                .tipoOperacion("TRANSFERENCIA")
+                .canal("MOVIL")
+                .estado("EXITOSA")
+                .fechaHora(LocalDateTime.now().toString())
+                .detalle(comentario != null ? comentario : "Transferencia de fondos exitosa")
+                .build();
+        messagingProducer.publicarTransaccion(event);
     }
 }
