@@ -36,79 +36,30 @@ Se implementó el patrón **Saga Coreografiada (*Choreographed Saga*)** compleme
 
 ---
 
-## 2. Diagramas de la Solución de Arquitectura
+## 2. Diagrama de la Solución de Arquitectura
 
-### A. Diagrama General de Microservicios Cloud y Broker JMS
+El siguiente diagrama representa de forma clara y directa la topología de eventos, colas y tolerancia a fallos implementada entre los microservicios:
 
 ```mermaid
 flowchart TD
-    subgraph ConfigAndDiscovery ["Infraestructura Cloud Spring"]
-        CS["Config Server<br>(Puerto 8888)"]
-        DS["Discovery Server Eureka<br>(Puerto 8761)"]
-    end
+    Canales["Canales Clientes (BFFs)<br>Móvil, Web, Cajero ATM"] -->|"Solicita Retiro o Transferencia"| Core["core-service (Puerto 8080)<br>Afectación Contable de Saldos"]
+    
+    Core -->|"Genera EventoTransaccion"| Pub["PublicadorTransacciones<br>Resilience4j Circuit Breaker y Retry"]
 
-    subgraph Canales ["Capa Canales (BFFs)"]
-        MOVIL["bff-movil (8443 HTTPS)<br>Token JWT aud: MOVIL"]
-        WEB["bff-web (8444 HTTPS)<br>Token JWT aud: WEB"]
-        ATM["bff-cajero (8445 HTTPS)<br>Token JWT aud: ATM"]
-    end
+    Pub -->|"Envío Normal (Broker UP)"| Cola[("Cola JMS: transacciones.bancarias<br>Apache ActiveMQ Classic: 61616")]
+    
+    Cola -->|"Consumo Asíncrono"| Receptor["ms-mensajeria (Puerto 8082)<br>@JmsListener en ReceptorTransacciones"]
+    
+    Cola -.->|"Mensajes no procesables"| DLQ[("Dead Letter Queue<br>ActiveMQ.DLQ")]
 
-    subgraph CoreBackend ["Capa Core Bancario (Emisor / Productor)"]
-        CORE["core-service (8080 HTTP)<br>• Persistencia de Cuentas<br>• PublicadorTransacciones<br>• Circuit Breaker & Retry"]
-    end
-
-    subgraph MensajeriaBroker ["Broker de Mensajería JMS (Docker)"]
-        AMQ["Apache ActiveMQ Classic<br>• Puerto TCP OpenWire: 61616<br>• Consola Web Admin: 8161"]
-        Q_TX[("Cola: transacciones.bancarias")]
-        Q_DLQ[("Cola: ActiveMQ.DLQ")]
-        AMQ --- Q_TX
-        AMQ --- Q_DLQ
-    end
-
-    subgraph ConsumidorMensajeria ["Capa Consumidora Asíncrona (Receptor)"]
-        MSG["ms-mensajeria (8082 HTTP)<br>• @JmsListener(destination='transacciones.bancarias')<br>• ReceptorTransacciones<br>• Endpoint REST /api/mensajeria/eventos"]
-    end
-
-    CS -.->|"Propiedades remotas"| CORE
-    CS -.->|"Propiedades remotas"| MSG
-    CS -.->|"Propiedades remotas"| MOVIL
-    CS -.->|"Propiedades remotas"| WEB
-    CS -.->|"Propiedades remotas"| ATM
-
-    CORE -.->|"Heartbeat & Registro"| DS
-    MSG -.->|"Heartbeat & Registro"| DS
-    MOVIL -.->|"Descubrimiento @LoadBalanced"| DS
-    WEB -.->|"Descubrimiento @LoadBalanced"| DS
-    ATM -.->|"Descubrimiento @LoadBalanced"| DS
-
-    MOVIL -->|"POST /operaciones/transferencia"| CORE
-    WEB -->|"GET /cuentas/{id}"| CORE
-    ATM -->|"POST /operaciones/retiro"| CORE
-
-    CORE -->|"1. convertAndSend (JmsTemplate)<br>Protegido por Resilience4j"| Q_TX
-    Q_TX -->|"2. @JmsListener (Consumo Asíncrono)"| MSG
-    Q_TX -.->|"3. Desvío ante fallos repetidos"| Q_DLQ
+    Pub -.->|"Broker Caído (Fallback)"| Contingencia[("Bitácora de Contingencia Local<br>/api/core/mensajeria/contingencias")]
 ```
 
----
-
-### B. Diagrama de Flujo de Eventos y Tolerancia a Fallos (Resilience4j + Fallback)
-
-```mermaid
-flowchart LR
-    Op["Operación Financiera<br>(Retiro / Transferencia)"] --> Core["core-service<br>(Afectación contable)"]
-    Core --> Evento["Construir EventoTransaccion<br>(Payload JSON con Jackson)"]
-    
-    Evento --> CB{"Circuit Breaker<br>envioMensajeria"}
-    
-    CB -- "Broker UP / Circuito CERRADO" --> JmsSend["JmsTemplate.convertAndSend<br>('transacciones.bancarias')"]
-    JmsSend --> ActiveMQ[("ActiveMQ Broker<br>(tcp://localhost:61616)")]
-    
-    ActiveMQ --> Listener["@JmsListener en ms-mensajeria<br>(Consumo exitoso y logging)"]
-    
-    CB -- "Broker DOWN / Circuito ABIERTO" --> Fallback["fallbackEnvioMensaje(...)<br>(Método de Contingencia)"]
-    Fallback --> Contingencia[("Bitácora de Contingencia Local<br>/api/core/mensajeria/contingencias")]
-```
+### Componentes del Flujo:
+1. **Emisor (`core-service`):** Procesa la operación bancaria y utiliza `PublicadorTransacciones` para enviar el evento a la cola.
+2. **Broker (`ActiveMQ`):** Enruta los mensajes en la cola `transacciones.bancarias` y gestiona la cola de descarte `ActiveMQ.DLQ`.
+3. **Receptor (`ms-mensajeria`):** Escucha asíncronamente con `@JmsListener` e imprime en consola la notificación.
+4. **Resiliencia (Fallback):** Si ActiveMQ no responde, el Circuit Breaker desvía el mensaje a la bitácora de contingencia sin interrumpir al usuario.
 
 ---
 
