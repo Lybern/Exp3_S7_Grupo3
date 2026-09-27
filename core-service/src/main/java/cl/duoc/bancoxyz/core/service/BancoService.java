@@ -4,8 +4,8 @@ import cl.duoc.bancoxyz.core.model.Cuenta;
 import cl.duoc.bancoxyz.core.model.MovimientoAnual;
 import cl.duoc.bancoxyz.core.model.Transaccion;
 import cl.duoc.bancoxyz.core.repository.BancoRepository;
-import cl.duoc.bancoxyz.core.messaging.TransaccionEvent;
-import cl.duoc.bancoxyz.core.messaging.TransaccionMessagingProducer;
+import cl.duoc.bancoxyz.core.mensajeria.EventoTransaccion;
+import cl.duoc.bancoxyz.core.mensajeria.PublicadorTransacciones;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
@@ -18,11 +18,11 @@ import java.util.UUID;
 public class BancoService {
 
     private final BancoRepository bancoRepository;
-    private final TransaccionMessagingProducer messagingProducer;
+    private final PublicadorTransacciones publicadorTransacciones;
 
-    public BancoService(BancoRepository bancoRepository, TransaccionMessagingProducer messagingProducer) {
+    public BancoService(BancoRepository bancoRepository, PublicadorTransacciones publicadorTransacciones) {
         this.bancoRepository = bancoRepository;
-        this.messagingProducer = messagingProducer;
+        this.publicadorTransacciones = publicadorTransacciones;
     }
 
     public Cuenta obtenerCuentaPorId(Long cuentaId) {
@@ -67,7 +67,7 @@ public class BancoService {
         bancoRepository.guardarTransaccion(tx);
 
         // Publicacion Asincrona del Evento Transaccional a ActiveMQ con tolerancia a fallos
-        TransaccionEvent event = TransaccionEvent.builder()
+        EventoTransaccion evento = EventoTransaccion.builder()
                 .transaccionId("TX-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase())
                 .cuentaOrigenId(cuentaId)
                 .cuentaDestinoId(null)
@@ -78,7 +78,7 @@ public class BancoService {
                 .fechaHora(LocalDateTime.now().toString())
                 .detalle("Giro por canal " + canal + " completado exitosamente")
                 .build();
-        messagingProducer.publicarTransaccion(event);
+        publicadorTransacciones.publicarTransaccion(evento);
 
         return cuenta;
     }
@@ -107,7 +107,7 @@ public class BancoService {
         bancoRepository.guardarTransaccion(abono);
 
         // Publicacion Asincrona del Evento Transaccional a ActiveMQ con tolerancia a fallos
-        TransaccionEvent event = TransaccionEvent.builder()
+        EventoTransaccion evento = EventoTransaccion.builder()
                 .transaccionId("TX-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase())
                 .cuentaOrigenId(cuentaOrigenId)
                 .cuentaDestinoId(cuentaDestinoId)
@@ -118,6 +118,6 @@ public class BancoService {
                 .fechaHora(LocalDateTime.now().toString())
                 .detalle(comentario != null ? comentario : "Transferencia de fondos exitosa")
                 .build();
-        messagingProducer.publicarTransaccion(event);
+        publicadorTransacciones.publicarTransaccion(evento);
     }
 }

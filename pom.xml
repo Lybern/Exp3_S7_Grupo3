@@ -23,7 +23,7 @@
 		<module>bff-movil</module>
 		<module>bff-web</module>
 		<module>bff-cajero</module>
-		<module>ms-auditoria</module>
+		<module>ms-mensajeria</module>
 	</modules>
 
 	<properties>
