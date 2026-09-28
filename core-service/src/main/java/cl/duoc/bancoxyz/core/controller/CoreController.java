@@ -8,6 +8,11 @@ import cl.duoc.bancoxyz.core.mensajeria.EventoTransaccion;
 import cl.duoc.bancoxyz.core.mensajeria.PublicadorTransacciones;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import cl.duoc.bancoxyz.core.dto.RespuestaRetiroDto;
+import cl.duoc.bancoxyz.core.dto.RespuestaTransferenciaDto;
+import cl.duoc.bancoxyz.core.dto.SolicitudRetiroDto;
+import cl.duoc.bancoxyz.core.dto.SolicitudTransferenciaDto;
+import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -51,24 +56,43 @@ public class CoreController {
         return ResponseEntity.ok(bancoService.obtenerMovimientosAnualesPorCuenta(cuentaId));
     }
 
-    @Operation(summary = "Ejecutar retiro")
+    @Operation(summary = "Ejecutar retiro de fondos")
     @PostMapping("/operaciones/retiro")
-    public ResponseEntity<Cuenta> ejecutarRetiro(@RequestBody Map<String, Object> req) {
-        Long cuentaId = Long.parseLong(req.get("cuentaId").toString());
-        Long monto = Long.parseLong(req.get("monto").toString());
-        String canal = req.getOrDefault("canal", "ATM").toString();
-        return ResponseEntity.ok(bancoService.ejecutarRetiro(cuentaId, monto, canal));
+    public ResponseEntity<RespuestaRetiroDto> ejecutarRetiro(@Valid @RequestBody SolicitudRetiroDto solicitud) {
+        Cuenta cuenta = bancoService.ejecutarRetiro(
+                solicitud.getCuentaId(),
+                solicitud.getMonto(),
+                solicitud.getCanal() != null ? solicitud.getCanal() : "ATM"
+        );
+        RespuestaRetiroDto respuesta = RespuestaRetiroDto.builder()
+                .cuentaId(cuenta.getCuentaId())
+                .montoRetirado(solicitud.getMonto())
+                .nuevoSaldoContable(cuenta.getSaldoContable())
+                .saldoDisponibleTotal(cuenta.getSaldoContable() + cuenta.getLineaSobregiro())
+                .canal(solicitud.getCanal() != null ? solicitud.getCanal() : "ATM")
+                .estado("EXITOSA")
+                .mensaje("Giro procesado exitosamente")
+                .build();
+        return ResponseEntity.ok(respuesta);
     }
 
-    @Operation(summary = "Ejecutar transferencia")
+    @Operation(summary = "Ejecutar transferencia electronica de fondos")
     @PostMapping("/operaciones/transferencia")
-    public ResponseEntity<Map<String, String>> ejecutarTransferencia(@RequestBody Map<String, Object> req) {
-        Long origen = Long.parseLong(req.get("cuentaOrigenId").toString());
-        Long destino = Long.parseLong(req.get("cuentaDestinoId").toString());
-        Long monto = Long.parseLong(req.get("monto").toString());
-        String comentario = req.getOrDefault("comentario", "").toString();
-        bancoService.ejecutarTransferencia(origen, destino, monto, comentario);
-        return ResponseEntity.ok(Map.of("mensaje", "Transferencia procesada exitosamente"));
+    public ResponseEntity<RespuestaTransferenciaDto> ejecutarTransferencia(@Valid @RequestBody SolicitudTransferenciaDto solicitud) {
+        bancoService.ejecutarTransferencia(
+                solicitud.getCuentaOrigenId(),
+                solicitud.getCuentaDestinoId(),
+                solicitud.getMonto(),
+                solicitud.getComentario()
+        );
+        RespuestaTransferenciaDto respuesta = RespuestaTransferenciaDto.builder()
+                .cuentaOrigenId(solicitud.getCuentaOrigenId())
+                .cuentaDestinoId(solicitud.getCuentaDestinoId())
+                .montoTransferido(solicitud.getMonto())
+                .estado("EXITOSA")
+                .mensaje("Transferencia procesada exitosamente")
+                .build();
+        return ResponseEntity.ok(respuesta);
     }
 
     @Operation(summary = "Consultar eventos en contingencia local (Circuit Breaker / ActiveMQ desconectado)")
