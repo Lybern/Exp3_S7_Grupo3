@@ -20,9 +20,6 @@
 		<module>config-server</module>
 		<module>discovery-server</module>
 		<module>core-service</module>
-		<module>bff-movil</module>
-		<module>bff-web</module>
-		<module>bff-cajero</module>
 		<module>ms-mensajeria</module>
 	</modules>
 
